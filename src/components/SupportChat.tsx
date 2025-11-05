@@ -90,46 +90,77 @@ export default function SupportChat() {
     setInput('')
     setLoading(true)
 
-    await new Promise(resolve => setTimeout(resolve, 1500))
+    try {
+      // Call the IT Support Agent via API
+      const response = await fetch('/api/agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: input,
+          agent_id: '68fd263d71c6b27d6c8eb80f', // IT Support Agent ID
+          user_id: 'employee-001',
+          session_id: 'session-' + Date.now()
+        })
+      })
 
-    const relevantArticles = findRelevantArticles(input)
-    const needsEscalation = input.toLowerCase().includes('urgent') || input.toLowerCase().includes('critical')
+      const data = await response.json()
 
-    let agentResponse = ''
-    if (input.toLowerCase().includes('email')) {
-      agentResponse = 'I found several helpful articles about email configuration and troubleshooting. Based on our knowledge base, the most common email sync issues on mobile devices are related to authentication settings. Have you tried checking your security settings and enabling "Less secure app access"? The articles on the right provide detailed steps.'
-    } else if (input.toLowerCase().includes('password')) {
-      agentResponse = 'Password reset is straightforward. You can reset your password through the company portal or use the password reset link sent to your registered email. Our knowledge base has detailed step-by-step instructions in the "Password Reset Procedures" article. Is there a specific error message you are encountering?'
-    } else if (input.toLowerCase().includes('vpn')) {
-      agentResponse = 'For VPN connection issues, first ensure you have the latest VPN client installed. Check your connection credentials and network stability. The VPN Connection Guide in our knowledge base provides detailed setup instructions for all operating systems.'
-    } else if (needsEscalation) {
-      agentResponse = 'I understand this is urgent. Based on the nature of your issue, this may require specialized attention from our senior IT team. I will escalate this to our support team immediately. You will receive an email confirmation shortly.'
-    } else {
-      agentResponse = 'Thank you for your query. I have searched our knowledge base and found relevant documentation that should help resolve your issue. Please review the articles shown on the right. If you need further assistance, I can escalate this to our specialized support team.'
-    }
+      if (data.success) {
+        // Extract agent response - handle both string and object responses
+        let agentResponse = ''
+        if (typeof data.response === 'string') {
+          agentResponse = data.response
+        } else if (typeof data.response === 'object' && data.response !== null) {
+          agentResponse = data.response.response || data.response.answer || JSON.stringify(data.response)
+        }
 
-    const agentMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'agent',
-      content: agentResponse,
-      timestamp: new Date(),
-      kbArticles: relevantArticles
-    }
+        const relevantArticles = findRelevantArticles(input)
+        const needsEscalation = agentResponse.toLowerCase().includes('escalate') ||
+                                input.toLowerCase().includes('urgent') ||
+                                input.toLowerCase().includes('critical') ||
+                                (data.response?.requires_escalation === true)
 
-    setMessages(prev => [...prev, agentMessage])
+        const agentMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'agent',
+          content: agentResponse,
+          timestamp: new Date(),
+          kbArticles: relevantArticles
+        }
 
-    if (needsEscalation) {
-      const newTicket: Ticket = {
-        id: `TKT-${Date.now()}`,
-        status: 'escalated',
-        escalationEmail: 'vidur@lyzr.ai'
+        setMessages(prev => [...prev, agentMessage])
+
+        if (needsEscalation) {
+          const newTicket: Ticket = {
+            id: `TKT-${Date.now()}`,
+            status: 'escalated',
+            escalationEmail: 'vidur@lyzr.ai'
+          }
+          setTicket(newTicket)
+          setEscalationPreview(`To: vidur@lyzr.ai\nSubject: Escalated IT Support Ticket - ${newTicket.id}\n\nTicket ID: ${newTicket.id}\nIssue: ${input}\n\nAgent Response:\n${agentResponse}\n\nEmployee has reported an issue requiring specialized support. Please review the conversation history and provide resolution.`)
+          setShowEscalationPreview(true)
+        }
+      } else {
+        const errorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'agent',
+          content: 'I encountered an error processing your request. Please try again.',
+          timestamp: new Date()
+        }
+        setMessages(prev => [...prev, errorMessage])
       }
-      setTicket(newTicket)
-      setEscalationPreview(`To: vidur@lyzr.ai\nSubject: Escalated IT Support Ticket - ${newTicket.id}\n\nTicket ID: ${newTicket.id}\nIssue: ${input}\n\nEmployee has reported an urgent issue requiring specialized support. Please review the conversation history and provide resolution.`)
-      setShowEscalationPreview(true)
+    } catch (error) {
+      console.error('Agent API error:', error)
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'agent',
+        content: 'Failed to connect to the support agent. Please check your connection and try again.',
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, errorMessage])
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   const handleEscalation = async () => {

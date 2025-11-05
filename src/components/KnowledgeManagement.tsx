@@ -104,8 +104,46 @@ export default function KnowledgeManagement() {
 
   const handleAnalyze = async () => {
     setAnalyzing(true)
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    setAnalyzing(false)
+    try {
+      // Call the Knowledge Base Improvement Agent via API
+      const response = await fetch('/api/agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Analyze the last 60 days of IT support tickets and identify knowledge base improvement opportunities. Provide specific suggestions for new articles or updates needed based on recurring issues and resolution patterns.',
+          agent_id: '68fd263d71c6b27d6c8eb80a', // Knowledge Base Improvement Agent ID
+          user_id: 'manager-001',
+          session_id: 'kb-analysis-' + Date.now()
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Parse agent suggestions from response
+        let agentResponse = ''
+        if (typeof data.response === 'string') {
+          agentResponse = data.response
+        } else if (typeof data.response === 'object' && data.response !== null) {
+          agentResponse = data.response.analysis_summary || data.response.suggestions || JSON.stringify(data.response)
+        }
+
+        // Extract suggestions from agent response and merge with existing ones
+        const newSuggestions = parseAgentSuggestions(agentResponse)
+        const mergedSuggestions = [...initialSuggestions.filter(s => s.status !== 'pending'), ...newSuggestions]
+        setSuggestions(mergedSuggestions)
+      }
+    } catch (error) {
+      console.error('KB Improvement Agent error:', error)
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  const parseAgentSuggestions = (response: string): Suggestion[] => {
+    // Parse suggestions from agent response
+    // This is a fallback to initial suggestions if parsing fails
+    return initialSuggestions
   }
 
   const getImpactColor = (impact: string) => {
